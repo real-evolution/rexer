@@ -10,4 +10,5 @@ readme = true
 publish = true
 
 [dependencies]
+kanal = { version = "0.1.0-pre8" }
 thiserror = { version = "1" }
