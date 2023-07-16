@@ -10,3 +10,4 @@ readme = true
 publish = true
 
 [dependencies]
+thiserror = { version = "1" }
