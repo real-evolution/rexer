@@ -1,14 +1,6 @@
-mod error;
-mod multi;
-mod oneshot;
+pub mod duplix;
+pub mod error;
+pub mod multi;
+pub mod oneshot;
 
 pub use error::{ConsumeError, ProduceError};
-pub use multi::{
-    bounded,
-    maybe_bounded,
-    unbounded,
-    MultiConsumer,
-    MultiConsumerStream,
-    MultiProducer,
-};
-pub use oneshot::{oneshot, OneshotConsumer, OneshotProducer};
