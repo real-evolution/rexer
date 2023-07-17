@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{self, Sender};
-use tokio::sync::{Mutex, MutexGuard};
 
 use crate::stream::MuxStream;
 
@@ -12,7 +11,7 @@ use crate::stream::MuxStream;
 /// received when [`MuxSink::push`] method is called.
 #[derive(Debug)]
 pub struct MuxSink<T, V> {
-    chans: Mutex<HashMap<T, Sender<V>>>,
+    chans: HashMap<T, Sender<V>>,
     streams_tx: Sender<MuxStream<T, V>>,
     mux_tx: Sender<(T, V)>,
     chan_buf: usize,
@@ -38,7 +37,7 @@ where
         assert!(chan_buf > 0);
 
         Self {
-            chans: Mutex::new(HashMap::new()),
+            chans: HashMap::new(),
             streams_tx: acceptor_tx,
             mux_tx,
             chan_buf,
@@ -55,18 +54,16 @@ where
     /// * `tag` - The tag of the channel to push to.
     /// * `value` - The item to push.
     pub async fn push(
-        &self,
+        &mut self,
         tag: T,
         value: V,
     ) -> Result<(), SendError<(T, V)>> {
-        let mut chans = self.chans.lock().await;
-
-        if let Some(chan) = chans.get_mut(&tag) {
+        if let Some(chan) = self.chans.get_mut(&tag) {
             if let Err(err) = chan.send(value).await {
-                self.insert_new(tag, err.0, chans).await?;
+                self.insert_new(tag, err.0).await?;
             }
         } else {
-            self.insert_new(tag, value, chans).await?;
+            self.insert_new(tag, value).await?;
         }
 
         Ok(())
@@ -74,11 +71,12 @@ where
 
     #[inline]
     async fn insert_new(
-        &self,
+        &mut self,
         tag: T,
         value: V,
-        mut chans: MutexGuard<'_, HashMap<T, Sender<V>>>,
     ) -> Result<(), SendError<(T, V)>> {
+        println!("new, {}", self.chans.len());
+
         let (tx, rx) = mpsc::channel::<V>(self.chan_buf);
         let stream = MuxStream::new(tag.clone(), self.mux_tx.clone(), rx);
 
@@ -87,7 +85,7 @@ where
         }
 
         tx.send(value).await.unwrap();
-        chans.insert(tag, tx);
+        self.chans.insert(tag, tx);
 
         Ok(())
     }
