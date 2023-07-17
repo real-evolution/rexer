@@ -12,4 +12,3 @@ publish = true
 [dependencies]
 futures = { version = "0" }
 kanal = { version = "0.1.0-pre8" }
-thiserror = { version = "1" }
