@@ -3,7 +3,7 @@ use std::hash::Hash;
 use std::sync::Arc;
 
 use dashmap::mapref::entry::Entry;
-use dashmap::mapref::one::{Ref, RefMut};
+use dashmap::mapref::one::RefMut;
 use dashmap::DashMap;
 
 /// A type that can be used as a key in a [`Map`].
@@ -35,19 +35,6 @@ impl<K: Key, V> Map<K, V> {
     #[inline]
     pub fn new() -> Self {
         Self(Default::default())
-    }
-
-    /// Gets a reference to the item identified with `key`.
-    ///
-    /// # Parameters
-    /// * `key` - The key identifying the item to get.
-    ///
-    /// # Returns
-    /// * [`Some(Ref<'_, K, V>)`] - A reference to the item if found.
-    /// * [`None`] - If no item is found.
-    #[inline]
-    pub fn get(&self, key: &K) -> Option<Ref<'_, K, V>> {
-        self.0.get(key)
     }
 
     /// Gets a **mutable** reference to the item identified with `key`.
