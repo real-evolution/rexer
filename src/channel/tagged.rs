@@ -36,6 +36,12 @@ where
     pub async fn send(&mut self, value: V) -> Result<(), SendError<(T, V)>> {
         self.inner.send((self.tag.clone(), value)).await
     }
+
+    /// Gets a reference to the tag of the channel.
+    #[inline]
+    pub const fn tag(&self) -> &T {
+        &self.tag
+    }
 }
 
 /// A tagged channel receiver.
@@ -68,5 +74,11 @@ where
     #[inline]
     pub fn close(&mut self) {
         self.inner.close();
+    }
+
+    /// Gets a reference to the tag of the channel.
+    #[inline]
+    pub const fn tag(&self) -> &T {
+        &self.tag
     }
 }
