@@ -1,20 +1,25 @@
-use hashbrown::hash_map::DefaultHashBuilder;
-use hashbrown::HashMap;
-use tokio::sync::{mpsc, Mutex, MutexGuard};
+use std::hash::Hash;
+use std::sync::Arc;
+
+use dashmap::DashMap;
+use tokio::sync::mpsc;
 
 use crate::stream::MuxStream;
 
 /// A type alias for the [`HashMap`] used to store the [`Sender`]s for each
 /// stream.
-pub type SinkMap<T, V> = HashMap<T, mpsc::Sender<V>, DefaultHashBuilder>;
+pub type SinkMap<T, V> = DashMap<T, mpsc::Sender<V>>;
 
 /// A multiplexed streams generator.
 ///
 /// This struct is used to generate new [`MuxStream`]s by using the tags
 /// received when [`MuxSink::push`] method is called.
 #[derive(Debug)]
-pub struct MuxSink<T, V> {
-    streams_tx: Mutex<SinkMap<T, V>>,
+pub struct MuxSink<T, V>
+where
+    T: Clone + Eq + Hash,
+{
+    streams_tx_map: Arc<SinkMap<T, V>>,
     pending_tx: mpsc::Sender<MuxStream<T, V>>,
     mux_tx: mpsc::Sender<(T, V)>,
     stream_buf: usize,
@@ -22,7 +27,7 @@ pub struct MuxSink<T, V> {
 
 impl<T, V> MuxSink<T, V>
 where
-    T: std::hash::Hash + Eq + Clone,
+    T: Hash + Eq + Clone,
 {
     /// Creates a new [`MuxSink`] with the given backlog and per-channel buffer
     /// size.
@@ -40,7 +45,7 @@ where
         assert!(stream_buf > 0);
 
         Self {
-            streams_tx: Default::default(),
+            streams_tx_map: Default::default(),
             pending_tx,
             mux_tx,
             stream_buf,
@@ -61,18 +66,18 @@ where
         tag: T,
         value: V,
     ) -> Result<(), mpsc::error::SendError<(T, V)>> {
-        let mut streams_tx = self.streams_tx.lock().await;
-
-        if let Some(tx) = streams_tx.get_mut(&tag) {
+        if let Some(tx) = self.streams_tx_map.get_mut(&tag) {
             if tx.is_closed() {
-                self.add_or_replace_stream(tag, value, streams_tx).await
+                drop(tx);
+                self.add_or_replace_stream(tag, value).await
             } else if let Err(err) = tx.send(value).await {
-                self.add_or_replace_stream(tag, err.0, streams_tx).await
+                drop(tx);
+                self.add_or_replace_stream(tag, err.0).await
             } else {
                 Ok(())
             }
         } else {
-            self.add_or_replace_stream(tag, value, streams_tx).await
+            self.add_or_replace_stream(tag, value).await
         }
     }
 
@@ -87,8 +92,13 @@ where
 
     /// Removes the stream with the given tag.
     #[inline]
-    pub async fn remove(&self, tag: &T) {
-        self.streams_tx.lock().await.remove(tag);
+    pub fn remove(&self, tag: &T) {
+        self.streams_tx_map.remove(tag);
+    }
+
+    #[inline]
+    pub fn close(self) {
+        self.streams_tx_map.clear();
     }
 
     #[inline]
@@ -96,10 +106,14 @@ where
         &self,
         tag: T,
         value: V,
-        mut streams_tx: MutexGuard<'_, SinkMap<T, V>>,
     ) -> Result<(), mpsc::error::SendError<(T, V)>> {
         let (tx, rx) = mpsc::channel::<V>(self.stream_buf);
-        let stream = MuxStream::new(tag.clone(), self.mux_tx.clone(), rx);
+        let stream = MuxStream::new(
+            tag.clone(),
+            self.mux_tx.clone(),
+            rx,
+            self.streams_tx_map.clone(),
+        );
 
         if (self.pending_tx.send(stream).await).is_err() {
             return Err(mpsc::error::SendError((tag, value)));
@@ -107,11 +121,10 @@ where
 
         tx.send(value).await.unwrap();
 
-        if let Some(stream_tx) = streams_tx.get_mut(&tag) {
-            *stream_tx = tx;
-        } else {
-            streams_tx.insert_unique_unchecked(tag, tx);
-        }
+        self.streams_tx_map
+            .entry(tag)
+            .and_modify(|o| *o = tx.clone())
+            .or_insert_with(|| tx);
 
         Ok(())
     }
@@ -120,14 +133,17 @@ where
 /// A wrapper around a [`MuxSink`] that allows sending items to a stream with a
 /// fluent API.
 #[derive(Debug)]
-pub struct MuxSinkEntry<'a, T, V> {
+pub struct MuxSinkEntry<'a, T, V>
+where
+    T: Clone + Eq + Hash,
+{
     sink: &'a MuxSink<T, V>,
     tag: T,
 }
 
 impl<'a, T, V> MuxSinkEntry<'a, T, V>
 where
-    T: Clone + Eq + std::hash::Hash,
+    T: Clone + Eq + Hash,
 {
     /// Sends an item to the stream with the given tag.
     #[inline]
@@ -142,13 +158,7 @@ where
 
     // Removes the stream with the given tag.
     #[inline]
-    pub async fn remove(self) {
-        self.sink.remove(&self.tag).await
-    }
-}
-
-impl<T, V> Drop for MuxSink<T, V> {
-    fn drop(&mut self) {
-        panic!("len: {}", self.streams_tx.get_mut().len());
+    pub fn remove(self) {
+        self.sink.remove(&self.tag);
     }
 }

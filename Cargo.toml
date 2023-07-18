@@ -10,6 +10,7 @@ readme = true
 publish = true
 
 [dependencies]
+dashmap = { version = "5" }
 futures = { version = "0" }
 hashbrown = { version = "0" }
 tokio = { version = "1" }
