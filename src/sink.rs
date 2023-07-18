@@ -1,9 +1,12 @@
-use std::collections::HashMap;
-
-use tokio::sync::mpsc::error::SendError;
-use tokio::sync::mpsc::{self, Sender};
+use hashbrown::hash_map::DefaultHashBuilder;
+use hashbrown::HashMap;
+use tokio::sync::mpsc;
 
 use crate::stream::MuxStream;
+
+/// A type alias for the [`HashMap`] used to store the [`Sender`]s for each
+/// stream.
+pub type SinkMap<T, V> = HashMap<T, mpsc::Sender<V>, DefaultHashBuilder>;
 
 /// A multiplexed streams generator.
 ///
@@ -11,10 +14,10 @@ use crate::stream::MuxStream;
 /// received when [`MuxSink::push`] method is called.
 #[derive(Debug)]
 pub struct MuxSink<T, V> {
-    chans: HashMap<T, Sender<V>>,
-    streams_tx: Sender<MuxStream<T, V>>,
-    mux_tx: Sender<(T, V)>,
-    chan_buf: usize,
+    streams_tx: SinkMap<T, V>,
+    pending_tx: mpsc::Sender<MuxStream<T, V>>,
+    mux_tx: mpsc::Sender<(T, V)>,
+    stream_buf: usize,
 }
 
 impl<T, V> MuxSink<T, V>
@@ -25,68 +28,76 @@ where
     /// size.
     ///
     /// # Parameters
-    /// * `chan_buf` - The number of messages to buffer per channel.
-    /// * `streams_tx` - The sender into which to send new streams.
+    /// * `stream_buf` - The number of messages to buffer per stream.
+    /// * `pending_tx` - The sender into which to send new streams.
     /// * `mux_tx` - The sender that channels use to send messages to the mux.
     #[inline]
     pub fn new(
-        chan_buf: usize,
-        acceptor_tx: Sender<MuxStream<T, V>>,
-        mux_tx: Sender<(T, V)>,
+        stream_buf: usize,
+        pending_tx: mpsc::Sender<MuxStream<T, V>>,
+        mux_tx: mpsc::Sender<(T, V)>,
     ) -> Self {
-        assert!(chan_buf > 0);
+        assert!(stream_buf > 0);
 
         Self {
-            chans: HashMap::new(),
-            streams_tx: acceptor_tx,
+            streams_tx: Default::default(),
+            pending_tx,
             mux_tx,
-            chan_buf,
+            stream_buf,
         }
     }
 
-    /// Pushes an item to the sink with the given tag.
-    ///
-    /// If a stream with the specified tag exists, the item will be sent to it;
-    /// otherwise, it will be created, and the stream will be buffered until
-    /// it is accepted.
+    /// Sends an item to the steam with the given tag if it exists; otherwise,
+    /// creates a new stream and sends the item to it.
     ///
     /// # Parameters
     /// * `tag` - The tag of the channel to push to.
     /// * `value` - The item to push.
-    pub async fn push(
+    ///
+    /// # Returns
+    /// A mutable reference to the sender of the channel.
+    pub async fn send_to(
         &mut self,
         tag: T,
         value: V,
-    ) -> Result<(), SendError<(T, V)>> {
-        if let Some(chan) = self.chans.get_mut(&tag) {
-            if let Err(err) = chan.send(value).await {
-                self.insert_new(tag, err.0).await?;
+    ) -> Result<&mut mpsc::Sender<V>, mpsc::error::SendError<(T, V)>> {
+        if let Some(chan) = self.streams_tx.get_mut(&tag) {
+            if chan.is_closed() {
+                self.add_or_replace_stream(tag, value).await
+            } else if let Err(err) = chan.send(value).await {
+                self.add_or_replace_stream(tag, err.0).await
+            } else {
+                Ok(self.streams_tx.get_mut(&tag).unwrap())
             }
         } else {
-            self.insert_new(tag, value).await?;
+            self.add_or_replace_stream(tag, value).await
         }
+    }
 
-        Ok(())
     }
 
     #[inline]
-    async fn insert_new(
+    async fn add_or_replace_stream(
         &mut self,
         tag: T,
         value: V,
-    ) -> Result<(), SendError<(T, V)>> {
-        println!("new, {}", self.chans.len());
-
-        let (tx, rx) = mpsc::channel::<V>(self.chan_buf);
+    ) -> Result<&mut mpsc::Sender<V>, mpsc::error::SendError<(T, V)>> {
+        let (tx, rx) = mpsc::channel::<V>(self.stream_buf);
         let stream = MuxStream::new(tag.clone(), self.mux_tx.clone(), rx);
 
-        if (self.streams_tx.send(stream).await).is_err() {
-            return Err(SendError((tag, value)));
+        if (self.pending_tx.send(stream).await).is_err() {
+            return Err(mpsc::error::SendError((tag, value)));
         }
 
         tx.send(value).await.unwrap();
-        self.chans.insert(tag, tx);
 
-        Ok(())
+        Ok(self
+            .streams_tx
+            .raw_entry_mut()
+            .from_key(&tag)
+            .and_modify(|_, o| *o = tx.clone())
+            .or_insert_with(|| (tag, tx))
+            .1)
     }
 }
+
