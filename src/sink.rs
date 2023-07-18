@@ -1,6 +1,6 @@
 use hashbrown::hash_map::DefaultHashBuilder;
 use hashbrown::HashMap;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex, MutexGuard};
 
 use crate::stream::MuxStream;
 
@@ -14,7 +14,7 @@ pub type SinkMap<T, V> = HashMap<T, mpsc::Sender<V>, DefaultHashBuilder>;
 /// received when [`MuxSink::push`] method is called.
 #[derive(Debug)]
 pub struct MuxSink<T, V> {
-    streams_tx: SinkMap<T, V>,
+    streams_tx: Mutex<SinkMap<T, V>>,
     pending_tx: mpsc::Sender<MuxStream<T, V>>,
     mux_tx: mpsc::Sender<(T, V)>,
     stream_buf: usize,
@@ -57,20 +57,22 @@ where
     /// # Returns
     /// A mutable reference to the sender of the channel.
     pub async fn send_to(
-        &mut self,
+        &self,
         tag: T,
         value: V,
-    ) -> Result<&mut mpsc::Sender<V>, mpsc::error::SendError<(T, V)>> {
-        if let Some(chan) = self.streams_tx.get_mut(&tag) {
-            if chan.is_closed() {
-                self.add_or_replace_stream(tag, value).await
-            } else if let Err(err) = chan.send(value).await {
-                self.add_or_replace_stream(tag, err.0).await
+    ) -> Result<(), mpsc::error::SendError<(T, V)>> {
+        let mut streams_tx = self.streams_tx.lock().await;
+
+        if let Some(tx) = streams_tx.get_mut(&tag) {
+            if tx.is_closed() {
+                self.add_or_replace_stream(tag, value, streams_tx).await
+            } else if let Err(err) = tx.send(value).await {
+                self.add_or_replace_stream(tag, err.0, streams_tx).await
             } else {
-                Ok(self.streams_tx.get_mut(&tag).unwrap())
+                Ok(())
             }
         } else {
-            self.add_or_replace_stream(tag, value).await
+            self.add_or_replace_stream(tag, value, streams_tx).await
         }
     }
 
@@ -85,16 +87,17 @@ where
 
     /// Removes the stream with the given tag.
     #[inline]
-    pub fn remove(&mut self, tag: &T) {
-        self.streams_tx.remove(tag);
+    pub async fn remove(&self, tag: &T) {
+        self.streams_tx.lock().await.remove(tag);
     }
 
     #[inline]
     async fn add_or_replace_stream(
-        &mut self,
+        &self,
         tag: T,
         value: V,
-    ) -> Result<&mut mpsc::Sender<V>, mpsc::error::SendError<(T, V)>> {
+        mut streams_tx: MutexGuard<'_, SinkMap<T, V>>,
+    ) -> Result<(), mpsc::error::SendError<(T, V)>> {
         let (tx, rx) = mpsc::channel::<V>(self.stream_buf);
         let stream = MuxStream::new(tag.clone(), self.mux_tx.clone(), rx);
 
@@ -104,13 +107,13 @@ where
 
         tx.send(value).await.unwrap();
 
-        Ok(self
-            .streams_tx
-            .raw_entry_mut()
-            .from_key(&tag)
-            .and_modify(|_, o| *o = tx.clone())
-            .or_insert_with(|| (tag, tx))
-            .1)
+        if let Some(stream_tx) = streams_tx.get_mut(&tag) {
+            *stream_tx = tx;
+        } else {
+            streams_tx.insert_unique_unchecked(tag, tx);
+        }
+
+        Ok(())
     }
 }
 
@@ -118,7 +121,7 @@ where
 /// fluent API.
 #[derive(Debug)]
 pub struct MuxSinkEntry<'a, T, V> {
-    sink: &'a mut MuxSink<T, V>,
+    sink: &'a MuxSink<T, V>,
     tag: T,
 }
 
@@ -139,8 +142,13 @@ where
 
     // Removes the stream with the given tag.
     #[inline]
-    pub fn remove(self) {
-        self.sink.remove(&self.tag)
+    pub async fn remove(self) {
+        self.sink.remove(&self.tag).await
     }
 }
 
+impl<T, V> Drop for MuxSink<T, V> {
+    fn drop(&mut self) {
+        panic!("len: {}", self.streams_tx.get_mut().len());
+    }
+}
