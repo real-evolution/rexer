@@ -63,4 +63,10 @@ where
     pub async fn recv(&mut self) -> Option<(T, V)> {
         self.inner.recv().await.map(|v| (self.tag.clone(), v))
     }
+
+    /// Close the channel.
+    #[inline]
+    pub fn close(&mut self) {
+        self.inner.close();
+    }
 }
