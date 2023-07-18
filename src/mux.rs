@@ -8,7 +8,10 @@ use crate::stream::MuxStream;
 /// A type to multiplex tagged messages to multiple channels (streams) with the
 /// tag attached to it.
 #[derive(Debug)]
-pub struct Mux<T, V> {
+pub struct Mux<T, V>
+where
+    T: Clone + Eq + Hash,
+{
     parts: MuxParts<T, V>,
 }
 
@@ -17,7 +20,10 @@ pub struct Mux<T, V> {
 /// This struct is used to allow the user to consume the [`Mux`] and split it
 /// into its parts more easily.
 #[derive(Debug)]
-pub struct MuxParts<T, V> {
+pub struct MuxParts<T, V>
+where
+    T: Clone + Eq + Hash,
+{
     /// The sink into which to send incoming tagged messages.
     pub sink: MuxSink<T, V>,
 
@@ -31,7 +37,7 @@ pub struct MuxParts<T, V> {
 
 impl<T, V> Mux<T, V>
 where
-    T: Hash + Eq + Clone,
+    T: Clone + Eq + Hash,
 {
     /// Creates a new [`Mux`] with a maximum of [`backlog`] pending streams, a
     /// buffer of [`mux_buf`] messages for unassigned messages, and a
