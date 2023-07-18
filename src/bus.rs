@@ -39,35 +39,25 @@ impl<T: Key, V> Bus<T, V> {
         tag: T,
         value: V,
     ) -> Result<Option<LaneRx<T, V>>, SendError<(T, V)>> {
-        if let Some(mut tx) = self.inner.get_mut(&tag) {
-            if tx.is_closed() {
-                return Err(SendError((tag, value)));
-            }
+        let mut lane_rx = None;
 
-            return tx.send(value).await.map(|_| None);
-        }
+        self.inner
+            .get_or_insert(tag.clone(), |slot| {
+                let (tx, rx) = mpsc::channel(self.lane_buf);
 
-        Ok(Some(self.make_lane(tag, value).await))
+                lane_rx = Some(LaneRx::new(rx, slot));
+
+                LaneTx::new(tx, tag)
+            })
+            .send(value)
+            .await?;
+
+        Ok(lane_rx)
     }
 
     /// Closes all lanes.
     #[inline]
     pub fn clear(&mut self) {
         self.inner.clear();
-    }
-
-    #[inline]
-    async fn make_lane(&self, tag: T, value: V) -> LaneRx<T, V> {
-        let (tx, rx) = mpsc::channel(self.lane_buf);
-
-        let mut lane_tx = LaneTx::new(tx, tag.clone());
-
-        let tx_slot = lane_tx
-            .send(value)
-            .await
-            .map(|_| self.inner.insert_or_replace(tag.clone(), lane_tx))
-            .unwrap();
-
-        LaneRx::new(rx, tx_slot)
     }
 }

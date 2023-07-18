@@ -2,7 +2,6 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::Arc;
 
-use dashmap::mapref::entry::Entry;
 use dashmap::mapref::one::RefMut;
 use dashmap::DashMap;
 
@@ -62,17 +61,13 @@ impl<K: Key, V> Map<K, V> {
     /// * [`MapSlot<K, V>`] - An object that removes the inserted or replaced
     ///  item from the map when dropped.
     #[inline]
-    pub fn insert_or_replace(&self, key: K, value: V) -> MapSlot<K, V> {
-        match self.0.entry(key.clone()) {
-            | Entry::Occupied(o) => {
-                o.replace_entry(value);
-                MapSlot::new(self.0.clone(), key)
-            }
-            | Entry::Vacant(v) => {
-                v.insert(value);
-                MapSlot::new(self.0.clone(), key)
-            }
-        }
+    pub fn get_or_insert<F>(&self, key: K, with: F) -> RefMut<'_, K, V>
+    where
+        F: FnOnce(MapSlot<K, V>) -> V,
+    {
+        self.0.entry(key.clone()).or_insert_with(|| {
+            with(MapSlot::new(self.0.clone(), key))
+        })
     }
 
     /// Clears the map, removing all items.
