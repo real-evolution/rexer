@@ -74,6 +74,19 @@ where
         }
     }
 
+    /// Creates a new [`MuxSinkEntry`] with the given tag.
+    ///
+    /// The returned [`MuxSinkEntry`] can be used to send items to the stream
+    /// with a fluent API.
+    #[inline]
+    pub fn stream(&mut self, tag: T) -> MuxSinkEntry<'_, T, V> {
+        MuxSinkEntry { sink: self, tag }
+    }
+
+    /// Removes the stream with the given tag.
+    #[inline]
+    pub fn remove(&mut self, tag: &T) {
+        self.streams_tx.remove(tag);
     }
 
     #[inline]
@@ -98,6 +111,36 @@ where
             .and_modify(|_, o| *o = tx.clone())
             .or_insert_with(|| (tag, tx))
             .1)
+    }
+}
+
+/// A wrapper around a [`MuxSink`] that allows sending items to a stream with a
+/// fluent API.
+#[derive(Debug)]
+pub struct MuxSinkEntry<'a, T, V> {
+    sink: &'a mut MuxSink<T, V>,
+    tag: T,
+}
+
+impl<'a, T, V> MuxSinkEntry<'a, T, V>
+where
+    T: Clone + Eq + std::hash::Hash,
+{
+    /// Sends an item to the stream with the given tag.
+    #[inline]
+    pub async fn send(
+        self,
+        value: V,
+    ) -> Result<MuxSinkEntry<'a, T, V>, mpsc::error::SendError<(T, V)>> {
+        self.sink.send_to(self.tag.clone(), value).await?;
+
+        Ok(self)
+    }
+
+    // Removes the stream with the given tag.
+    #[inline]
+    pub fn remove(self) {
+        self.sink.remove(&self.tag)
     }
 }
 
