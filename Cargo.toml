@@ -11,10 +11,7 @@ publish = true
 
 [dependencies]
 dashmap = { version = "5" }
-futures = { version = "0" }
-hashbrown = { version = "0" }
 tokio = { version = "1" }
-tokio-util = { version = "0" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
