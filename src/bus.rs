@@ -1,5 +1,5 @@
-use mpsc::error::SendError;
 use tokio::sync::mpsc;
+use tokio::sync::mpsc::error::SendError;
 
 use crate::lane::{LaneRx, LaneTx};
 use crate::map::{Key, Map};

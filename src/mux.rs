@@ -74,14 +74,11 @@ mod tests {
 
     #[tokio::test]
     async fn mux_test() {
-        let (mut mux_tx, mut mux_rx) = Mux::new(1024, 128);
-
-        tokio::spawn(async move {
+        let (mut mux_tx, mut mux_rx) = Mux::new(64, 64);
+        let rep = tokio::spawn(async move {
             while let Some((tag, msg)) = mux_rx.recv().await {
                 println!("<-- tag: {}, msg: {}", tag, msg);
             }
-
-            eprintln!("[!] mux unexpectedly closed, aborting");
         });
 
         for i in 0..1000 {
@@ -105,7 +102,7 @@ mod tests {
                     let (mut tx, mut rx) = lane.split();
 
                     while let Some(msg) = rx.recv().await {
-                        println!("--> tag: {}, msg: {}", tx.tag(), msg);
+                        //println!("--> tag: {}, msg: {}", tx.tag(), msg);
 
                         if tx.send(format!("reply to: {msg}")).await.is_err() {
                             break;
@@ -116,5 +113,8 @@ mod tests {
         }
 
         eprintln!("[!] connection closed");
+
+        mux_tx.close();
+        rep.await.unwrap();
     }
 }
