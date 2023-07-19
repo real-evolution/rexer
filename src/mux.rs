@@ -70,51 +70,87 @@ impl<T: Key, V> Mux<T, V> {
 
 #[cfg(test)]
 mod tests {
+    use fake::{Fake, Faker};
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+
     use super::*;
 
     #[tokio::test]
-    async fn mux_test() {
-        let (mut mux_tx, mut mux_rx) = Mux::new(64, 64);
-        let rep = tokio::spawn(async move {
-            while let Some((tag, msg)) = mux_rx.recv().await {
-                println!("<-- tag: {}, msg: {}", tag, msg);
+    async fn mux_full_test() {
+        let buf: usize = (1..128).fake();
+        let lane_buf: usize = (1..32).fake();
+        let lane_cnt: u64 = (10..200).fake();
+        let msg_cnt: u64 = (10..200).fake();
+
+        let (mut mux_tx, mut mux_rx) = Mux::new(buf, lane_buf);
+
+        let pull = tokio::spawn(async move {
+            for lane_no in 0..lane_cnt {
+                let rng = &mut get_rng(lane_no);
+
+                for msg_no in 0..msg_cnt {
+                    let (actual_tag, actual_msg) = mux_rx.recv().await.unwrap();
+
+                    assert_eq!(lane_no, actual_tag);
+
+                    let (actual_msg_no, actual_msg): (u64, String) = actual_msg;
+                    let expected_msg: String = Faker.fake_with_rng(rng);
+
+                    assert_eq!(msg_no, actual_msg_no);
+                    assert_eq!(expected_msg, actual_msg);
+                }
             }
+
+            assert_eq!(None, mux_rx.recv().await);
         });
 
-        for i in 0..1000 {
-            for j in 0..1000 {
-                let Some(lane) =
-                    (match mux_tx.send(i, format!("hello {i} #{j}")).await {
-                        | Ok(lane) => lane,
-                        | Err(mpsc::error::SendError((tag, msg))) => {
-                            eprintln!(
-                                "[!] could not send: tag: {}, msg: {}",
-                                tag, msg
-                            );
-                            break;
-                        }
-                    })
-                else {
-                    continue;
-                };
+        for lane_no in 0..lane_cnt {
+            let rng = &mut get_rng(lane_no);
 
-                tokio::spawn(async move {
-                    let (mut tx, mut rx) = lane.split();
+            for msg_no in 0..msg_cnt {
+                let msg: String = Faker.fake_with_rng(rng);
+                let lane =
+                    mux_tx.send(lane_no, (msg_no, msg.clone())).await.unwrap();
 
-                    while let Some(msg) = rx.recv().await {
-                        //println!("--> tag: {}, msg: {}", tx.tag(), msg);
-
-                        if tx.send(format!("reply to: {msg}")).await.is_err() {
-                            break;
-                        }
-                    }
-                });
+                if msg_no == 0 {
+                    tokio::spawn(handle_lane(lane.unwrap(), msg_cnt));
+                }
             }
         }
 
-        eprintln!("[!] connection closed");
+        async fn handle_lane(lane: Lane<u64, (u64, String)>, msg_cnt: u64) {
+            let (mut tx, mut rx) = lane.split();
+            let rng = &mut get_rng(*tx.tag());
+
+            for msg_no in 0..msg_cnt {
+                let (actual_msg_no, actual_msg) = rx.recv().await.unwrap();
+                let expected_msg: String = Faker.fake_with_rng(rng);
+
+                assert_eq!(msg_no, actual_msg_no);
+                assert_eq!(expected_msg, actual_msg);
+
+                tx.send((msg_no, expected_msg)).await.unwrap();
+            }
+
+            assert_eq!(None, rx.recv().await);
+        }
 
         mux_tx.close();
-        rep.await.unwrap();
+        pull.await.unwrap();
+    }
+
+    #[inline]
+    fn get_rng(lane: u64) -> StdRng {
+        union Seed {
+            u8: [u8; 32],
+            u64: [u64; 4],
+        }
+
+        let seed = Seed {
+            u64: [lane, lane, lane, lane],
+        };
+
+        StdRng::from_seed(unsafe { seed.u8 })
     }
 }
