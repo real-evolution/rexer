@@ -11,7 +11,7 @@ publish = true
 
 [dependencies]
 dashmap = { version = "5" }
-tokio = { version = "1" }
+tokio = { version = "1", features = ["sync"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
