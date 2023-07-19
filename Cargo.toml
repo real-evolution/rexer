@@ -15,7 +15,3 @@ tokio = { version = "1", features = ["sync"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
-
-[profile.release]
-codegen-units = 1
-lto = true
