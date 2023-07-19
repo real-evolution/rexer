@@ -40,17 +40,19 @@ impl<T: Key, V> Bus<T, V> {
         value: V,
     ) -> Result<Option<LaneRx<T, V>>, SendError<(T, V)>> {
         let mut lane_rx = None;
+        let mut tx = self.inner.get_or_insert(tag.clone(), |slot| {
+            let (tx, rx) = mpsc::channel(self.lane_buf);
 
-        self.inner
-            .get_or_insert(tag.clone(), |slot| {
-                let (tx, rx) = mpsc::channel(self.lane_buf);
+            lane_rx = Some(LaneRx::new(rx, slot));
 
-                lane_rx = Some(LaneRx::new(rx, slot));
+            LaneTx::new(tx, tag.clone())
+        });
 
-                LaneTx::new(tx, tag)
-            })
-            .send(value)
-            .await?;
+        if tx.is_closed() {
+            return Err(SendError((tag, value)));
+        } else {
+            tx.send(value).await?;
+        }
 
         Ok(lane_rx)
     }
