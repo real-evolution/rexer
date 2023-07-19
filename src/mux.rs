@@ -63,8 +63,8 @@ impl<T: Key, V> Mux<T, V> {
 
     /// Close all lanes.
     #[inline]
-    pub fn close_all(mut self) {
-        self.bus.clear();
+    pub fn close(self) {
+        drop(self)
     }
 }
 

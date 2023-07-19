@@ -63,3 +63,10 @@ impl<T: Key, V> Bus<T, V> {
         self.inner.clear();
     }
 }
+
+impl<T: Key, V> Drop for Bus<T, V> {
+    #[inline]
+    fn drop(&mut self) {
+        self.clear()
+    }
+}
