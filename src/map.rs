@@ -65,15 +65,27 @@ impl<K: Key, V> Map<K, V> {
     where
         F: FnOnce(MapSlot<K, V>) -> V,
     {
-        self.0.entry(key.clone()).or_insert_with(|| {
-            with(MapSlot::new(self.0.clone(), key))
-        })
+        self.0
+            .entry(key.clone())
+            .or_insert_with(|| with(MapSlot::new(self.0.clone(), key)))
     }
 
     /// Clears the map, removing all items.
     #[inline]
     pub fn clear(&self) {
         self.0.clear();
+    }
+
+    /// Gets the number of items in the map.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Gets whether the map is empty or not.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 }
 
@@ -114,5 +126,66 @@ impl<K: Key, V> Drop for MapSlot<K, V> {
     #[inline]
     fn drop(&mut self) {
         self.map.remove(&self.key);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use fake::{Fake, Faker};
+
+    use super::*;
+
+    #[test]
+    fn map_test() {
+        let map = Map::<u32, String>::new();
+
+        assert!(map.is_empty());
+
+        let key: u32 = Faker.fake();
+        let value: String = Faker.fake();
+
+        let mut slot = None;
+        let entry = map.get_or_insert(key, |s| {
+            assert_eq!(s.key(), &key);
+
+            slot = Some(s);
+            value.clone()
+        });
+
+        assert_eq!(entry.key(), &key);
+        assert_eq!(entry.value(), &value);
+
+        drop(entry);
+
+        assert!(!map.is_empty());
+        assert_eq!(map.len(), 1);
+        assert!(slot.is_some());
+
+        map.get_or_insert(key, |_| panic!("this should never happen!"));
+        slot = None;
+
+        assert!(matches!(map.get_mut(&key), None));
+        assert!(map.is_empty());
+        assert_eq!(map.len(), 0);
+
+        map.get_or_insert(key, |s| {
+            assert_eq!(s.key(), &key);
+
+            slot = Some(s);
+            value.clone()
+        });
+
+        assert!(!map.is_empty());
+        assert_eq!(map.len(), 1);
+
+        map.clear();
+
+        assert!(map.is_empty());
+        assert_eq!(map.len(), 0);
+
+        drop(slot);
+
+        assert!(map.is_empty());
+        assert_eq!(map.len(), 0);
     }
 }

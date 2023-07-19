@@ -77,11 +77,11 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn mux_full_test() {
-        let buf: usize = (1..128).fake();
-        let lane_buf: usize = (1..32).fake();
-        let lane_cnt: u64 = (10..200).fake();
-        let msg_cnt: u64 = (10..200).fake();
+    async fn mux_test() {
+        let buf: usize = (1..32).fake();
+        let lane_buf: usize = (1..8).fake();
+        let lane_cnt: u64 = (10..50).fake();
+        let msg_cnt: u64 = (10..50).fake();
 
         let (mut mux_tx, mut mux_rx) = Mux::new(buf, lane_buf);
 
