@@ -1,5 +1,5 @@
 [package]
-name = "remux"
+name = "rexer"
 version = "0.1.0"
 edition = "2021"
 description = "Async I/O multiplexing library for rust"
