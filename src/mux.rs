@@ -1,8 +1,6 @@
 use tokio::sync::mpsc;
 
-use crate::bus::Bus;
-use crate::lane::{Lane, LaneTx};
-use crate::map::Key;
+use crate::{Bus, Key, Lane, LaneTx};
 
 /// A multiplexer that allows for multiple senders and receivers act on a single
 /// stream of messages.

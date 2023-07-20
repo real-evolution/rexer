@@ -1,8 +1,7 @@
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::SendError;
 
-use crate::lane::{LaneRx, LaneTx};
-use crate::map::{Key, Map};
+use crate::{Key, LaneRx, LaneTx, Map};
 
 /// The backing bus for [`Mux`](crate::mux::Mux).
 ///
