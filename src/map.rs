@@ -61,7 +61,7 @@ impl<K: Key, V> Map<K, V> {
     /// * [`MapSlot<K, V>`] - An object that removes the inserted or replaced
     ///  item from the map when dropped.
     #[inline]
-    pub fn get_or_insert<F>(&self, key: K, with: F) -> RefMut<'_, K, V>
+    pub(crate) fn get_or_insert<F>(&self, key: K, with: F) -> RefMut<'_, K, V>
     where
         F: FnOnce(MapSlot<K, V>) -> V,
     {
@@ -75,7 +75,7 @@ impl<K: Key, V> Map<K, V> {
     /// # Parameters
     /// * `key` - The key identifying the item to remove.
     #[inline]
-    pub fn remove(&self, key: &K) -> Option<(K, V)> {
+    pub(crate) fn remove(&self, key: &K) -> Option<(K, V)> {
         self.0.remove(key)
     }
 
