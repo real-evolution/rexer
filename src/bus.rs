@@ -34,7 +34,25 @@ impl<T: Key, V> Bus<T, V> {
     /// # Parameters
     /// * `tag` - The tag of the lane.
     /// * `value` - The value to send to the lane.
-    pub async fn push(
+    pub async fn push(&self, mut tag: T, mut value: V) -> Option<LaneRx<T, V>> {
+        loop {
+            match self.push_item(tag, value).await {
+                | Ok(rx) => return rx,
+                | Err(SendError((etag, evalue))) => {
+                    (tag, value) = (etag, evalue);
+                }
+            }
+        }
+    }
+
+    /// Closes all lanes.
+    #[inline]
+    pub fn clear(&mut self) {
+        self.inner.clear();
+    }
+
+    #[inline]
+    async fn push_item(
         &self,
         tag: T,
         value: V,
@@ -48,19 +66,22 @@ impl<T: Key, V> Bus<T, V> {
             LaneTx::new(tx, tag.clone())
         });
 
-        if tx.is_closed() {
-            return Err(SendError((tag, value)));
-        } else {
-            tx.send(value).await?;
+        match lane_rx {
+            | Some(lane_rx) => {
+                tx.send(value).await.unwrap();
+                Ok(Some(lane_rx))
+            }
+            | None => {
+                if tx.is_closed() {
+                    // remove closed lane from map
+                    _ = self.inner.remove(&tag);
+
+                    return Err(SendError((tag, value)));
+                }
+
+                tx.send(value).await.map(|_| None)
+            }
         }
-
-        Ok(lane_rx)
-    }
-
-    /// Closes all lanes.
-    #[inline]
-    pub fn clear(&mut self) {
-        self.inner.clear();
     }
 }
 

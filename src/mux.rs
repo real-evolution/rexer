@@ -1,5 +1,4 @@
 use tokio::sync::mpsc;
-use tokio::sync::mpsc::error::SendError;
 
 use crate::bus::Bus;
 use crate::lane::{Lane, LaneTx};
@@ -47,17 +46,11 @@ impl<T: Key, V> Mux<T, V> {
     /// * [`Err(SendError((tag, value)))`] - If the lane associated with the
     ///   given tag is closed. closed.
     #[inline]
-    pub async fn send(
-        &mut self,
-        tag: T,
-        value: V,
-    ) -> Result<Option<Lane<T, V>>, SendError<(T, V)>> {
+    pub async fn send(&mut self, tag: T, value: V) -> Option<Lane<T, V>> {
         self.bus.push(tag, value).await.map(|rx| {
-            rx.map(|rx| {
-                let tx = LaneTx::new(self.tx.clone(), rx.tag().clone());
+            let tx = LaneTx::new(self.tx.clone(), rx.tag().clone());
 
-                Lane::from_parts(tx, rx)
-            })
+            Lane::from_parts(tx, rx)
         })
     }
 
@@ -110,8 +103,7 @@ mod tests {
 
             for msg_no in 0..msg_cnt {
                 let msg: String = Faker.fake_with_rng(rng);
-                let lane =
-                    mux_tx.send(lane_no, (msg_no, msg.clone())).await.unwrap();
+                let lane = mux_tx.send(lane_no, (msg_no, msg.clone())).await;
 
                 if msg_no == 0 {
                     tokio::spawn(handle_lane(lane.unwrap(), msg_cnt));
