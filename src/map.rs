@@ -70,6 +70,15 @@ impl<K: Key, V> Map<K, V> {
             .or_insert_with(|| with(MapSlot::new(self.0.clone(), key)))
     }
 
+    /// Removes the item identified with `key` from the map.
+    ///
+    /// # Parameters
+    /// * `key` - The key identifying the item to remove.
+    #[inline]
+    pub fn remove(&self, key: &K) -> Option<(K, V)> {
+        self.0.remove(key)
+    }
+
     /// Clears the map, removing all items.
     #[inline]
     pub fn clear(&self) {
