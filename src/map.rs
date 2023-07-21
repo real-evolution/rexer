@@ -25,7 +25,7 @@ pub struct Map<K: Key, V>(Arc<DashMap<K, V>>);
 /// moving the slot around more freely.
 #[derive(Debug)]
 pub struct MapSlot<K: Key, V> {
-    map: Arc<DashMap<K, V>>,
+    map: Option<Arc<DashMap<K, V>>>,
     key: K,
 }
 
@@ -114,7 +114,10 @@ impl<K: Key, V> MapSlot<K, V> {
     /// Creates a new instance of [`MapSlot`].
     #[inline]
     fn new(map: Arc<DashMap<K, V>>, key: K) -> Self {
-        Self { map, key }
+        Self {
+            map: Some(map),
+            key,
+        }
     }
 
     /// Gets a reference to the item associated with this slot.
@@ -126,15 +129,24 @@ impl<K: Key, V> MapSlot<K, V> {
     /// Gets whether the item associated with this slot is still in the map or
     /// not.
     #[inline]
-    pub fn is_valid(&self) -> bool {
-        self.map.contains_key(&self.key)
+    pub const fn is_valid(&self) -> bool {
+        self.map.is_some()
+    }
+
+    /// Eagarly removes the item associated with this slot from the map if it
+    /// still exists.
+    #[inline]
+    pub fn manual_drop(&mut self) {
+        if let Some(map) = self.map.take() {
+            map.remove(&self.key);
+        }
     }
 }
 
 impl<K: Key, V> Drop for MapSlot<K, V> {
     #[inline]
     fn drop(&mut self) {
-        self.map.remove(&self.key);
+        self.manual_drop()
     }
 }
 

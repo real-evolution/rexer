@@ -3,6 +3,8 @@ use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::map::{Key, MapSlot};
 
+pub(crate) type LaneTxSlot<T, V> = MapSlot<T, LaneTx<T, V>>;
+
 /// A single tagged lane in [`Bus`](crate::bus::Bus).
 #[derive(Debug)]
 pub struct Lane<T: Key, V> {
@@ -85,7 +87,7 @@ impl<T: Key, V> LaneTx<T, V> {
 #[derive(Debug)]
 pub struct LaneRx<T: Key, V> {
     inner: Receiver<(T, V)>,
-    tx_slot: MapSlot<T, LaneTx<T, V>>,
+    tx_slot: LaneTxSlot<T, V>,
 }
 
 impl<T: Key, V> LaneRx<T, V> {
@@ -105,13 +107,19 @@ impl<T: Key, V> LaneRx<T, V> {
     /// Receives a tagged value from the lane.
     #[inline]
     pub async fn recv(&mut self) -> Option<V> {
-        match self.inner.recv().await {
-            | Some((tag, value)) => {
-                debug_assert_eq!(self.tag(), &tag);
-                Some(value)
-            }
-            | None => None,
+        if self.is_closed() {
+            return None;
         }
+
+        let value = self.inner.recv().await;
+
+        self.map_value(value)
+    }
+
+    /// Gets whether the lane is closed or not.
+    #[inline]
+    pub const fn is_closed(&self) -> bool {
+        !self.tx_slot.is_valid()
     }
 
     /// Closes the lane, preventing new values from being sent.
@@ -119,12 +127,29 @@ impl<T: Key, V> LaneRx<T, V> {
     /// Any values already sent can still be received.
     #[inline]
     pub fn close(&mut self) {
-        self.inner.close()
+        if !self.is_closed() {
+            self.inner.close();
+            self.tx_slot.manual_drop();
+        }
     }
 
     /// Gets whether the lane is closed or not.
     #[inline]
     pub const fn tag(&self) -> &T {
         self.tx_slot.key()
+    }
+
+    #[inline]
+    fn map_value(&mut self, value: Option<(T, V)>) -> Option<V> {
+        match value {
+            | Some((tag, value)) => {
+                debug_assert_eq!(self.tag(), &tag);
+                Some(value)
+            }
+            | None => {
+                self.tx_slot.manual_drop();
+                None
+            }
+        }
     }
 }
