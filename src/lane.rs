@@ -86,6 +86,11 @@ impl<T: Key, V> LaneTx<T, V> {
     pub const fn tag(&self) -> &T {
         &self.tag
     }
+
+    #[inline(always)]
+    pub(crate) fn into_inner(self) -> (T, Sender<(T, V)>) {
+        (self.tag, self.inner)
+    }
 }
 
 /// A [`Lane`](crate::lane::Lane) receiver half.

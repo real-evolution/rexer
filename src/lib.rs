@@ -11,3 +11,6 @@ pub use lane::{Lane, LaneRx, LaneTx};
 pub use map::{Key, Map};
 #[doc(inline)]
 pub use mux::Mux;
+
+#[cfg(feature = "util")]
+pub mod util;
