@@ -1,6 +1,6 @@
 [package]
 name = "rexer"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "Async I/O multiplexing library for rust"
 authors = ["Ayman Al-Qadhi <alqd@protonmail.com>"]
