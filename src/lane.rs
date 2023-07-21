@@ -1,3 +1,5 @@
+use std::task::{Context, Poll};
+
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{Receiver, Sender};
 
@@ -43,11 +45,14 @@ impl<T: Key, V> Lane<T, V> {
     }
 }
 
-/// A [`Lane`](crate::lane::Lane) sender half.
-#[derive(Debug, Clone)]
-pub struct LaneTx<T: Key, V> {
-    tag: T,
-    inner: Sender<(T, V)>,
+pin_project_lite::pin_project! {
+    /// A [`Lane`](crate::lane::Lane) sender half.
+    #[derive(Debug, Clone)]
+    pub struct LaneTx<T: Key, V> {
+        #[pin]
+        inner: Sender<(T, V)>,
+        tag: T,
+    }
 }
 
 impl<T: Key, V> LaneTx<T, V> {
@@ -114,6 +119,19 @@ impl<T: Key, V> LaneRx<T, V> {
         let value = self.inner.recv().await;
 
         self.map_value(value)
+    }
+
+    /// Polls to receive the next message on this channel.
+    #[inline]
+    pub fn poll_recv(&mut self, cx: &mut Context<'_>) -> Poll<Option<V>>
+    where
+        T: Unpin,
+    {
+        if self.is_closed() {
+            return Poll::Ready(None);
+        }
+
+        self.inner.poll_recv(cx).map(|v| self.map_value(v))
     }
 
     /// Gets whether the lane is closed or not.
