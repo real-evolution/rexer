@@ -26,3 +26,12 @@ tokio-util = { version = "0", optional = true }
 fake = { version = "2" }
 tokio = { version = "1", features = ["full"] }
 rand = { version = "0" }
+
+[profile.optimized]
+debug = false
+incremental = true
+opt-level = 3
+inherits = "release"
+codegen-units = 1
+lto = true
+panic = "abort"

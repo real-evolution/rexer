@@ -71,8 +71,8 @@ mod tests {
     async fn mux_test() {
         let buf: usize = (1..32).fake();
         let lane_buf: usize = (1..8).fake();
-        let lane_cnt: u64 = (10..50).fake();
-        let msg_cnt: u64 = (10..50).fake();
+        let lane_cnt: u64 = 1000;
+        let msg_cnt: u64 = 1000;
 
         let (mut mux_tx, mut mux_rx) = Mux::new(buf, lane_buf);
 

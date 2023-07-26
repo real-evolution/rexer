@@ -185,7 +185,7 @@ mod tests {
         map.get_or_insert(key, |_| panic!("this should never happen!"));
         slot = None;
 
-        assert!(matches!(map.get_mut(&key), None));
+        assert!(map.get_mut(&key).is_none());
         assert!(map.is_empty());
         assert_eq!(map.len(), 0);
 
